@@ -157,10 +157,12 @@ function ClusteredMarkers({ packages }: { packages: Package[] }) {
 
 function DriverLiveMarker({ location }: { location: { lat: number; lng: number } }) {
   const map = useMap();
+  const hasPannedRef = useRef(false);
 
   useEffect(() => {
-    if (map && location) {
+    if (map && location && !hasPannedRef.current) {
       map.panTo(location);
+      hasPannedRef.current = true; // mark as panned
     }
   }, [map, location]);
 
@@ -170,7 +172,7 @@ function DriverLiveMarker({ location }: { location: { lat: number; lng: number }
       icon={{
         path: google.maps.SymbolPath.CIRCLE,
         scale: 8,
-        fillColor: "#4285F4", // Google Maps Blue
+        fillColor: "#4285F4",
         fillOpacity: 1,
         strokeWeight: 2,
         strokeColor: "white",
