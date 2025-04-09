@@ -4,16 +4,31 @@ import { APIProvider, Map, Marker, useMap } from "@vis.gl/react-google-maps";
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
+import Cookies from "js-cookie";
 
 interface Package {
   id: string;
-  description: string;
+  weight: number;
+  price: number;
   status: string;
+  description: string;
+
+  sender_name: string;
+  sender_phone: string;
+  sender_address: string;
   sender_latitude: string;
   sender_longitude: string;
-  sender_address: string;
+
+  receiver_name: string;
+  receiver_phone: string;
   receiver_address: string;
+  receiver_latitude: string;
+  receiver_longitude: string;
+
+  createdAt: string;
+  updatedAt: string;
 }
+
 
 interface ApiResponse {
   data: Package[];
@@ -22,6 +37,7 @@ interface ApiResponse {
 export default function Home() {
   const [pendingPackages, setPendingPackages] = useState<Package[]>([]);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<Package | null>(null);
 
   useEffect(() => {
     const fetchPackages = async () => {
@@ -67,6 +83,78 @@ export default function Home() {
     }
   }, []);
 
+  const updatePackageStatus = async (pkg: Package, newStatus: string) => {
+
+    const userCookie = Cookies.get("user");
+
+    if (!userCookie) {
+      console.error("❌ 'user' cookie not found.");
+      return;
+    }
+
+    let driverId: string | undefined;
+    try {
+      const user = JSON.parse(userCookie);
+      driverId = user.driverId;
+    } catch (err) {
+      console.error("❌ Failed to parse 'user' cookie:", err);
+      return;
+    }
+
+    if (!driverId) {
+      console.error("❌ driverId not found in user cookie.");
+      return;
+    }
+
+    try {
+      const response = await axios.put(`https://api.dynamits.id/api/v1/packages/${pkg.id}`, {
+        senderName: pkg.sender_name,
+        senderAddress: pkg.sender_address,
+        senderPhone: pkg.sender_phone,
+        senderLatitude: pkg.sender_latitude,
+        senderLongitude: pkg.sender_longitude,
+
+        receiverName: pkg.receiver_name,
+        receiverAddress: pkg.receiver_address,
+        receiverPhone: pkg.receiver_phone,
+        receiverLatitude: pkg.receiver_latitude,
+        receiverLongitude: pkg.receiver_longitude,
+
+        packageWeight: pkg.weight,
+        packagePrice: pkg.price,
+        packageDescription: pkg.description,
+
+        status: newStatus,
+      });
+
+      console.log("Package updated:", response.data);
+
+      const orderRes = await axios.post(`https://api.dynamits.id/api/v1/orders`, {
+        packageId: pkg.id,
+        driverId: driverId,
+      });
+  
+      console.log(`✅ Order created:`, orderRes.data);
+
+      // Refetch updated list after taking the order
+      const updatedPackages = await axios.get<ApiResponse>("https://api.dynamits.id/api/v1/packages");
+      const filtered = updatedPackages.data.data
+        .filter((p) => p.status === "pending")
+        .filter((p) => p.sender_latitude && p.sender_longitude);
+
+      setPendingPackages(filtered);
+    } catch (err) {
+      console.error("Failed to update package:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedPackage) {
+      updatePackageStatus(selectedPackage, "shipping");
+      setSelectedPackage(null);
+    }
+  }, [selectedPackage]);
+
   return (
     <div className="flex h-screen w-screen">
       <APIProvider apiKey={process.env.NEXT_PUBLIC_MAPS_API || ""}>
@@ -77,7 +165,8 @@ export default function Home() {
             mapId="bd607af67d5b8861"
             style={{ width: "100%", height: "100%" }}
           >
-            <ClusteredMarkers packages={pendingPackages} />
+            <ClusteredMarkers packages={pendingPackages} onSelect={setSelectedPackage} />
+
             {driverLocation && <DriverLiveMarker location={driverLocation} />}
           </Map>
         </div>
@@ -86,7 +175,8 @@ export default function Home() {
   );
 }
 
-function ClusteredMarkers({ packages }: { packages: Package[] }) {
+function ClusteredMarkers({ packages, onSelect }: { packages: Package[]; onSelect: (pkg: Package) => void }) {
+
   const map = useMap();
   const markersRef = useRef<google.maps.Marker[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
@@ -125,7 +215,9 @@ function ClusteredMarkers({ packages }: { packages: Package[] }) {
             <strong>Description:</strong> ${pkg.description}<br/>
             <strong>Sender Address:</strong><br/> ${pkg.sender_address}<br/>
             <strong>Receiver Address:</strong><br/> ${pkg.receiver_address}<br/><br/>
-            <button style="
+            <button 
+            id="take-order-btn-${pkg.id}"
+            style="
               background-color: #2563EB;
               color: white;
               padding: 6px 12px;
@@ -133,11 +225,21 @@ function ClusteredMarkers({ packages }: { packages: Package[] }) {
               border-radius: 4px;
               cursor: pointer;
               font-size: 13px;
-            " onclick="alert('More details about package ${pkg.id}')">View Details</button>
+            "
+            >Take Order</button>
           </div>
         `;
         infoWindow.setContent(contentHtml);
         infoWindow.open(map, marker);
+
+        google.maps.event.addListenerOnce(infoWindow, "domready", () => {
+          const btn = document.getElementById(`take-order-btn-${pkg.id}`);
+          if (btn) {
+            btn.addEventListener("click", () => {
+              onSelect(pkg);
+            });
+          }
+        });
       });
 
       markersRef.current.push(marker);
@@ -162,7 +264,7 @@ function DriverLiveMarker({ location }: { location: { lat: number; lng: number }
   useEffect(() => {
     if (map && location && !hasPannedRef.current) {
       map.panTo(location);
-      hasPannedRef.current = true; // mark as panned
+      hasPannedRef.current = true;
     }
   }, [map, location]);
 

@@ -24,8 +24,8 @@ import Cookies from "js-cookie"
 
 const items = [
   { title: "Home", url: "/", icon: Home },
-  { title: "Assignments", url: "#", icon: Inbox },
-  { title: "History", url: "#", icon: Calendar },
+  { title: "Assignments", url: "/assignments", icon: Inbox },
+  { title: "History", url: "/history", icon: Calendar },
   { title: "Contact Admin", url: "#", icon: Phone },
   { title: "Settings", url: "#", icon: Settings },
 ]
